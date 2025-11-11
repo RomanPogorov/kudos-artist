@@ -93,6 +93,10 @@ def find_yellow_banner_center(img: Image.Image, user_id: int) -> tuple:
         width = img_array.shape[1]
         search_area = img_array[int(height * 0.6):, :]  # Нижние 40%
         
+        # Работаем только с RGB каналами (первые 3), игнорируем альфа-канал если есть
+        if search_area.shape[-1] == 4:
+            search_area = search_area[:, :, :3]  # Берём только RGB, отбрасываем альфа
+        
         # Определяем диапазон жёлтого цвета (RGB)
         # Жёлтый баннер примерно #F4C542 = RGB(244, 197, 66)
         lower_yellow = np.array([200, 160, 40])  # Нижняя граница
