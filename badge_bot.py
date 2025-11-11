@@ -56,13 +56,13 @@ USE_PREDEFINED_REFERENCE_IMAGES = True  # Использовать предус�
 NEGATIVE_PROMPT = "text, letters, words, signature, watermark, realistic, photo, multiple characters, blurry"
 
 # Настройки текста на бейдже
-FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"  # Путь к шрифту
+FONT_PATH = "fonts/Golos-Text_Bold.ttf"  # Путь к шрифту
 FONT_SIZE_BASE = 60  # Базовый размер шрифта для текста на баннере
 FONT_SIZE_MIN = 30  # Минимальный размер шрифта
 FONT_SIZE_MAX = 80  # Максимальный размер шрифта
-TEXT_COLOR = "#4A3728"  # Темно-коричневый
-TEXT_STROKE_COLOR = "#000000"  # Чёрная обводка для контраста
-TEXT_STROKE_WIDTH = 3  # Толщина обводки текста
+TEXT_COLOR = "#000000"  # Чёрный залитый текст
+TEXT_STROKE_COLOR = None  # Без обводки
+TEXT_STROKE_WIDTH = 0  # Без обводки
 # Позиция текста на баннере (процент от высоты изображения)
 TEXT_Y_POSITION_PERCENT = 0.93  # 93% от высоты = примерно на баннере внизу
 
@@ -449,27 +449,52 @@ def add_text_to_badge(image_url: str, badge_text: str, user_id: int) -> BytesIO:
         text_height = bbox[3] - bbox[1]
         
         # Находим центр жёлтого баннера автоматически
-        text_x, text_y = find_yellow_banner_center(img, user_id)
-        logger.info(f"User {user_id}: Placing text at ({text_x}, {text_y})")
+        banner_center_x, banner_center_y = find_yellow_banner_center(img, user_id)
+        logger.info(f"User {user_id}: Banner center at ({banner_center_x}, {banner_center_y})")
         
-        # Рисуем текст с якорем в центре (mm = middle-middle)
-        stroke_width = int(TEXT_STROKE_WIDTH * scale_factor)
-        draw.text(
-            (text_x, text_y),
-            badge_text,
-            font=font,
-            fill=TEXT_COLOR,
-            stroke_width=stroke_width,
-            stroke_fill=TEXT_STROKE_COLOR,
-            anchor="mm"  # Центрируем текст по середине
-        )
+        # Рисуем текст с изгибом по форме баннера
+        import math
+        
+        # Параметры изгиба
+        bend_amount = 15  # Максимальный сдвиг по Y (в пикселях)
+        
+        # Вычисляем общую ширину текста для центрирования
+        total_width = text_width
+        start_x = banner_center_x - total_width / 2
+        
+        # Рисуем каждый символ с изгибом
+        current_x = start_x
+        for i, char in enumerate(badge_text):
+            # Вычисляем ширину текущего символа
+            char_bbox = draw.textbbox((0, 0), char, font=font)
+            char_width = char_bbox[2] - char_bbox[0]
+            
+            # Вычисляем позицию символа относительно центра текста
+            relative_pos = (current_x + char_width/2 - banner_center_x) / (total_width / 2)
+            
+            # Вычисляем сдвиг по Y для создания дуги (парабола)
+            # Изгиб вниз - края текста выше, центр ниже
+            y_offset = bend_amount * (relative_pos ** 2)
+            
+            # Рисуем символ
+            draw.text(
+                (current_x, banner_center_y + y_offset),
+                char,
+                font=font,
+                fill=TEXT_COLOR,
+                anchor="lt"
+            )
+            
+            current_x += char_width
+        
+        logger.info(f"User {user_id}: Drew curved text at ({banner_center_x}, {banner_center_y}) with bend={bend_amount}px")
         
         # Сохраняем в BytesIO
         output = BytesIO()
         img.save(output, format='PNG', quality=95)
         output.seek(0)
         
-        logger.info(f"User {user_id}: Badge completed successfully - Font: {font_size}px, Text at y={text_y}")
+        logger.info(f"User {user_id}: Badge completed successfully - Font: {font_size}px")
         return output
         
     except Exception as e:

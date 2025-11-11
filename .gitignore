@@ -43,6 +43,10 @@ temp/
 files/
 *.zip
 
+# Custom fonts (add your font files here)
+fonts/*.ttf
+fonts/*.otf
+
 # Secrets - НЕ ЗАГРУЖАЕМ ТОКЕНЫ!
 .env
 .env.example
