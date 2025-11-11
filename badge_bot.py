@@ -455,37 +455,46 @@ def add_text_to_badge(image_url: str, badge_text: str, user_id: int) -> BytesIO:
         # Рисуем текст с изгибом по форме баннера
         import math
         
-        # Параметры изгиба
-        bend_amount = 15  # Максимальный сдвиг по Y (в пикселях)
+        # Параметры изгиба и разрядки
+        bend_amount = 20  # Максимальный сдвиг по Y (в пикселях)
+        letter_spacing = 0.02  # Разрядка между буквами (4%)
         
-        # Вычисляем общую ширину текста для центрирования
-        total_width = text_width
+        # Вычисляем общую ширину текста с учётом разрядки
+        total_width = 0
+        char_widths = []
+        for char in badge_text:
+            char_bbox = draw.textbbox((0, 0), char, font=font)
+            char_width = char_bbox[2] - char_bbox[0]
+            char_widths.append(char_width)
+            total_width += char_width * (1 + letter_spacing)
+        
+        total_width -= char_widths[-1] * letter_spacing  # Убираем разрядку после последнего символа
+        
         start_x = banner_center_x - total_width / 2
         
         # Рисуем каждый символ с изгибом
         current_x = start_x
         for i, char in enumerate(badge_text):
-            # Вычисляем ширину текущего символа
-            char_bbox = draw.textbbox((0, 0), char, font=font)
-            char_width = char_bbox[2] - char_bbox[0]
+            char_width = char_widths[i]
             
             # Вычисляем позицию символа относительно центра текста
             relative_pos = (current_x + char_width/2 - banner_center_x) / (total_width / 2)
             
             # Вычисляем сдвиг по Y для создания дуги (парабола)
-            # Изгиб вниз - края текста выше, центр ниже
+            # Изгиб вверх - края ниже, центр выше
             y_offset = bend_amount * (relative_pos ** 2)
             
             # Рисуем символ
             draw.text(
-                (current_x, banner_center_y + y_offset),
+                (current_x, banner_center_y - y_offset),
                 char,
                 font=font,
                 fill=TEXT_COLOR,
                 anchor="lt"
             )
             
-            current_x += char_width
+            # Добавляем ширину символа + разрядку
+            current_x += char_width * (1 + letter_spacing)
         
         logger.info(f"User {user_id}: Drew curved text at ({banner_center_x}, {banner_center_y}) with bend={bend_amount}px")
         
