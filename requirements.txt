@@ -5,3 +5,4 @@ requests==2.31.0
 deep-translator==1.11.4
 python-dotenv==1.0.0
 numpy==1.26.3
+scikit-image==0.22.0

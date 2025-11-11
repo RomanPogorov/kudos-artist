@@ -57,9 +57,9 @@ NEGATIVE_PROMPT = "text, letters, words, signature, watermark, realistic, photo,
 
 # Настройки текста на бейдже
 FONT_PATH = "fonts/Golos-Text_Bold.ttf"  # Путь к шрифту
-FONT_SIZE_BASE = 60  # Базовый размер шрифта для текста на баннере
-FONT_SIZE_MIN = 30  # Минимальный размер шрифта
-FONT_SIZE_MAX = 80  # Максимальный размер шрифта
+FONT_SIZE_BASE = 80  # Базовый размер шрифта для текста на баннере
+FONT_SIZE_MIN = 60  # Минимальный размер шрифта
+FONT_SIZE_MAX = 100  # Максимальный размер шрифта
 TEXT_COLOR = "#000000"  # Чёрный залитый текст
 TEXT_STROKE_COLOR = None  # Без обводки
 TEXT_STROKE_WIDTH = 0  # Без обводки
@@ -456,7 +456,15 @@ def add_text_to_badge(image_url: str, badge_text: str, user_id: int) -> BytesIO:
         import math
         
         # Параметры изгиба и разрядки
-        bend_amount = 20  # Максимальный сдвиг по Y (в пикселях)
+        # bend_amount зависит от количества символов
+        if len(badge_text) <= 12:
+            bend_amount = 20  # Меньший изгиб для коротких текстов
+        else:
+            bend_amount = 28  # Больший изгиб для длинных текстов
+        
+        text_vertical_offset = 6  # Поднять текст вверх на 6 пикселей
+        
+        logger.info(f"User {user_id}: Text length: {len(badge_text)} chars, bend_amount: {bend_amount}px")
         letter_spacing = 0.02  # Разрядка между буквами (4%)
         
         # Вычисляем общую ширину текста с учётом разрядки
@@ -486,7 +494,7 @@ def add_text_to_badge(image_url: str, badge_text: str, user_id: int) -> BytesIO:
             
             # Рисуем символ
             draw.text(
-                (current_x, banner_center_y - y_offset),
+                (current_x, banner_center_y - y_offset - text_vertical_offset),
                 char,
                 font=font,
                 fill=TEXT_COLOR,
@@ -552,7 +560,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • Опиши что должно быть на картинке
 
 **Шаг 2:** Укажите текст для баннера
-• До 20 символов для лучшего вида
+• До 12 символов для лучшего вида
 • Английские заглавные буквы смотрятся лучше
 • Примеры: "UX SCOUT", "DEBUG NINJA"
 
@@ -641,7 +649,7 @@ async def handle_scene_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 f"📸 Использую предустановленные референсные фото ({len(reference_images)} шт.)\n\n"
                 f"**Шаг 2/2:** Какой текст написать на баннере?\n"
                 f"Например: DEBUG NINJA, CODE MASTER, UX SCOUT...\n\n"
-                f"(До 20 символов)",
+                f"(До 12 символов)",
                 parse_mode='Markdown'
             )
             return WAITING_FOR_BADGE_TEXT
@@ -651,7 +659,7 @@ async def handle_scene_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 f"⚠️ Референсные фото не найдены в папке {REFERENCE_IMAGES_DIR}\n\n"
                 f"**Шаг 2/2:** Какой текст написать на баннере?\n"
                 f"Например: DEBUG NINJA, CODE MASTER, UX SCOUT...\n\n"
-                f"(До 20 символов)",
+                f"(До 12 символов)",
                 parse_mode='Markdown'
             )
             return WAITING_FOR_BADGE_TEXT
@@ -703,7 +711,7 @@ async def handle_reference_photos(update: Update, context: ContextTypes.DEFAULT_
                 f"✅ Загружено {count} фото (максимум)\n\n"
                 f"**Шаг 3/3:** Какой текст написать на баннере?\n"
                 f"Например: DEBUG NINJA, CODE MASTER, UX SCOUT...\n\n"
-                f"(До 20 символов)",
+                f"(До 12 символов)",
                 parse_mode='Markdown'
             )
             return WAITING_FOR_BADGE_TEXT
@@ -726,7 +734,7 @@ async def skip_reference_photos(update: Update, context: ContextTypes.DEFAULT_TY
         "⏭ Пропускаем референсные фото\n\n"
         "**Шаг 3/3:** Какой текст написать на баннере?\n"
         "Например: DEBUG NINJA, CODE MASTER, UX SCOUT...\n\n"
-        "(До 20 символов)",
+        "(До 12 символов)",
         parse_mode='Markdown'
     )
     return WAITING_FOR_BADGE_TEXT
@@ -738,9 +746,9 @@ async def handle_badge_text_input(update: Update, context: ContextTypes.DEFAULT_
     badge_text = update.message.text.strip()
     
     # Проверка длины текста
-    if len(badge_text) > 20:
+    if len(badge_text) > 12:
         await update.message.reply_text(
-            "⚠️ Текст слишком длинный (максимум 20 символов).\n"
+            "⚠️ Текст слишком длинный (максимум 12 символов).\n"
             "Попробуй покороче:"
         )
         return WAITING_FOR_BADGE_TEXT
