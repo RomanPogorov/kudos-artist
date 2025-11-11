@@ -22,6 +22,10 @@ from telegram.ext import (
     filters,
     ConversationHandler
 )
+from dotenv import load_dotenv
+
+# Загружаем переменные окружения из .env файла
+load_dotenv()
 
 # Настройка логирования
 logging.basicConfig(
