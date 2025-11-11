@@ -34,8 +34,8 @@ TELEGRAM_TOKEN=your_telegram_token
 REPLICATE_API_TOKEN=your_replicate_token
 EOF
 
-# Загрузи переменные и запусти
-export $(cat .env | xargs) && python badge_bot.py
+# Запусти бота (переменные загрузятся автоматически из .env)
+python badge_bot.py
 ```
 
 ## 📝 Использование
