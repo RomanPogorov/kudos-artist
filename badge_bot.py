@@ -23,6 +23,7 @@ from telegram.ext import (
     ConversationHandler
 )
 from dotenv import load_dotenv
+import numpy as np
 
 # Загружаем переменные окружения из .env файла
 load_dotenv()
@@ -71,6 +72,54 @@ WAITING_FOR_SCENE, WAITING_FOR_BADGE_TEXT, WAITING_FOR_REFERENCE_PHOTOS = range(
 # =============================================================================
 # ФУНКЦИИ ГЕНЕРАЦИИ
 # =============================================================================
+
+def find_yellow_banner_center(img: Image.Image, user_id: int) -> tuple:
+    """
+    Находит центр жёлтого баннера на изображении по цвету
+    
+    Args:
+        img: PIL Image объект
+        user_id: ID пользователя для логирования
+        
+    Returns:
+        Кортеж (center_x, center_y) с координатами центра баннера
+    """
+    try:
+        # Конвертируем изображение в numpy массив
+        img_array = np.array(img)
+        
+        # Ищем только в нижней половине изображения (баннер всегда внизу)
+        height = img_array.shape[0]
+        width = img_array.shape[1]
+        search_area = img_array[int(height * 0.6):, :]  # Нижние 40%
+        
+        # Определяем диапазон жёлтого цвета (RGB)
+        # Жёлтый баннер примерно #F4C542 = RGB(244, 197, 66)
+        lower_yellow = np.array([200, 160, 40])  # Нижняя граница
+        upper_yellow = np.array([255, 220, 100])  # Верхняя граница
+        
+        # Создаём маску для жёлтых пикселей
+        mask = np.all((search_area >= lower_yellow) & (search_area <= upper_yellow), axis=-1)
+        
+        # Находим координаты всех жёлтых пикселей
+        yellow_pixels = np.where(mask)
+        
+        if len(yellow_pixels[0]) > 0:
+            # Вычисляем центр масс жёлтой области
+            center_y = int(np.mean(yellow_pixels[0])) + int(height * 0.6)  # Добавляем отступ
+            center_x = int(np.mean(yellow_pixels[1]))
+            
+            logger.info(f"User {user_id}: Found yellow banner at ({center_x}, {center_y}), yellow pixels: {len(yellow_pixels[0])}")
+            return (center_x, center_y)
+        else:
+            # Если не нашли жёлтый баннер, используем позицию по умолчанию
+            logger.warning(f"User {user_id}: Yellow banner not found, using default position")
+            return (width // 2, int(height * 0.93))
+            
+    except Exception as e:
+        logger.error(f"User {user_id}: Error finding yellow banner: {e}")
+        # Fallback к позиции по умолчанию
+        return (img.width // 2, int(img.height * 0.93))
 
 def load_reference_images_from_dir(directory: str) -> list:
     """
@@ -395,9 +444,9 @@ def add_text_to_badge(image_url: str, badge_text: str, user_id: int) -> BytesIO:
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
         
-        # Позиция текста - по центру на жёлтом баннере
-        text_x = img.width // 2
-        text_y = int(img.height * TEXT_Y_POSITION_PERCENT)
+        # Находим центр жёлтого баннера автоматически
+        text_x, text_y = find_yellow_banner_center(img, user_id)
+        logger.info(f"User {user_id}: Placing text at ({text_x}, {text_y})")
         
         # Рисуем текст с якорем в центре (mm = middle-middle)
         stroke_width = int(TEXT_STROKE_WIDTH * scale_factor)
