@@ -404,38 +404,9 @@ def add_text_to_badge(image_url: str, badge_text: str, user_id: int) -> BytesIO:
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
         
-        # Вычисляем фиксированный размер баннера (80% ширины, 100px высоты)
-        banner_width = int(img.width * BANNER_WIDTH_PERCENT)
-        banner_height = BANNER_HEIGHT  # Фиксированная высота 100px
-        
-        # Позиция баннера - по центру по горизонтали, внизу изображения
-        banner_x = (img.width - banner_width) // 2  # Центрируем баннер
-        banner_y = img.height - BANNER_HEIGHT_OFFSET - banner_height  # Внизу изображения
-        
-        # Рисуем фон баннера (золотой) с прозрачностью 90%
-        # Создаём временное изображение для баннера с альфа-каналом
-        banner_overlay = Image.new('RGBA', (banner_width, banner_height), (0, 0, 0, 0))
-        banner_draw = ImageDraw.Draw(banner_overlay)
-        
-        # Конвертируем цвет баннера в RGBA (90% opacity = 230 из 255)
-        banner_color_rgb = tuple(int(BANNER_COLOR[i:i+2], 16) for i in (1, 3, 5))  # Преобразуем #F4C542 в RGB
-        banner_color_rgba = (*banner_color_rgb, 230)  # Добавляем альфа-канал (90% = 230/255)
-        
-        banner_draw.rectangle(
-            [0, 0, banner_width, banner_height],
-            fill=banner_color_rgba
-        )
-        
-        # Накладываем баннер на основное изображение
-        img.paste(banner_overlay, (banner_x, banner_y), banner_overlay)
-        
-        # Пересоздаём draw после конвертации в RGBA
-        draw = ImageDraw.Draw(img)
-        
-        # Рисуем текст ровно по центру баннера (без изгиба)
-        # Центр баннера
-        text_x = banner_x + banner_width // 2
-        text_y = banner_y + banner_height // 2
+        # Позиция текста - по центру внизу изображения
+        text_x = img.width // 2
+        text_y = img.height - BANNER_HEIGHT_OFFSET
         
         # Рисуем текст с якорем в центре (mm = middle-middle)
         stroke_width = int(TEXT_STROKE_WIDTH * scale_factor)
@@ -454,7 +425,7 @@ def add_text_to_badge(image_url: str, badge_text: str, user_id: int) -> BytesIO:
         img.save(output, format='PNG', quality=95)
         output.seek(0)
         
-        logger.info(f"User {user_id}: Badge completed successfully - Font: {font_size}px, Banner: {banner_height}px height")
+        logger.info(f"User {user_id}: Badge completed successfully - Font: {font_size}px, Text at y={text_y}")
         return output
         
     except Exception as e:
