@@ -56,18 +56,14 @@ NEGATIVE_PROMPT = "text, letters, words, signature, watermark, realistic, photo,
 
 # Настройки текста на бейдже
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"  # Путь к шрифту
-FONT_SIZE_BASE = 100  # Базовый размер шрифта (уменьшен в 5 раз: было 300)
-FONT_SIZE_MIN = 40  # Минимальный размер шрифта (уменьшен)
-FONT_SIZE_MAX = 120  # Максимальный размер шрифта (уменьшен в 5 раз: было 600)
+FONT_SIZE_BASE = 60  # Базовый размер шрифта для текста на баннере
+FONT_SIZE_MIN = 30  # Минимальный размер шрифта
+FONT_SIZE_MAX = 80  # Максимальный размер шрифта
 TEXT_COLOR = "#4A3728"  # Темно-коричневый
-TEXT_STROKE_COLOR = "#F4C542"  # Золотой
-TEXT_STROKE_WIDTH = 2  # Толщина обводки текста (уменьшена)
-BANNER_COLOR = "#F4C542"  # Цвет баннера
-BANNER_HEIGHT_OFFSET = 200  # Отступ баннера от низа изображения (в пикселях)
-BANNER_WIDTH_PERCENT = 0.8  # Ширина баннера в процентах от ширины изображения (80%)
-BANNER_HEIGHT = 100  # Фиксированная высота баннера в пикселях
-BANNER_PADDING_X = 30  # Горизонтальный отступ баннера (уменьшен в 5 раз: было 150)
-BANNER_PADDING_Y = 15  # Вертикальный отступ баннера (уменьшен в 3 раза: было 50)
+TEXT_STROKE_COLOR = "#000000"  # Чёрная обводка для контраста
+TEXT_STROKE_WIDTH = 3  # Толщина обводки текста
+# Позиция текста на баннере (процент от высоты изображения)
+TEXT_Y_POSITION_PERCENT = 0.93  # 93% от высоты = примерно на баннере внизу
 
 # Состояния диалога
 WAITING_FOR_SCENE, WAITING_FOR_BADGE_TEXT, WAITING_FOR_REFERENCE_PHOTOS = range(3)
@@ -362,21 +358,16 @@ def add_text_to_badge(image_url: str, badge_text: str, user_id: int) -> BytesIO:
         badge_text = badge_text.upper()
         
         # Вычисляем адаптивный размер шрифта в зависимости от размера изображения
-        # Используем процент от высоты изображения для более надёжного масштабирования
         image_width = img.width
         image_height = img.height
-        scale_factor = image_width / 857  # 857 - базовая ширина из параметров модели
         
-        # Используем процент от высоты изображения (более надёжный способ)
-        font_size_from_height = int(image_height * 0.03)  # 3% от высоты изображения (уменьшено в 5 раз: было 15%)
-        # Также применяем базовый размер с уменьшенным множителем
-        font_size_from_base = int(FONT_SIZE_BASE * scale_factor * 0.5)  # Уменьшен множитель до 0.5 (было 2.5)
-        # Берём максимальный из двух вариантов
-        font_size = max(font_size_from_height, font_size_from_base)
+        # Используем фиксированный размер, адаптированный к ширине изображения
+        scale_factor = image_width / 1024  # 1024 - стандартная ширина от Nano Banana
+        font_size = int(FONT_SIZE_BASE * scale_factor)
         # Ограничиваем диапазоном
         font_size = max(FONT_SIZE_MIN, min(font_size, FONT_SIZE_MAX))
         
-        logger.info(f"User {user_id}: Image size: {img.width}x{img.height}, Scale factor: {scale_factor:.2f}, Font from height: {font_size_from_height}, Font from base: {font_size_from_base}, Final font size: {font_size}")
+        logger.info(f"User {user_id}: Image size: {img.width}x{img.height}, Scale factor: {scale_factor:.2f}, Font size: {font_size}")
         
         # Загружаем шрифт с адаптивным размером
         font = None
@@ -404,9 +395,9 @@ def add_text_to_badge(image_url: str, badge_text: str, user_id: int) -> BytesIO:
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
         
-        # Позиция текста - по центру внизу изображения
+        # Позиция текста - по центру на жёлтом баннере
         text_x = img.width // 2
-        text_y = img.height - BANNER_HEIGHT_OFFSET
+        text_y = int(img.height * TEXT_Y_POSITION_PERCENT)
         
         # Рисуем текст с якорем в центре (mm = middle-middle)
         stroke_width = int(TEXT_STROKE_WIDTH * scale_factor)
