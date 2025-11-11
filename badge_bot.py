@@ -432,29 +432,21 @@ def add_text_to_badge(image_url: str, badge_text: str, user_id: int) -> BytesIO:
         # Пересоздаём draw после конвертации в RGBA
         draw = ImageDraw.Draw(img)
         
-        # Рисуем текст с изгибом (bend) по дуге внутри баннера
-        import math
+        # Рисуем текст ровно по центру баннера (без изгиба)
+        # Центр баннера
+        text_x = banner_x + banner_width // 2
+        text_y = banner_y + banner_height // 2
         
-        # Центр дуги - центр баннера
-        arc_center_x = banner_x + banner_width // 2
-        arc_center_y = banner_y + banner_height // 2
-        
-        # Радиус дуги - примерно половина высоты баннера (чтобы текст был изогнут)
-        arc_radius = banner_height // 2 - 10
-        
-        # Углы дуги (от -30 до +30 градусов, конвертируем в радианы)
-        start_angle = math.radians(-30)  # Начало дуги
-        end_angle = math.radians(30)     # Конец дуги
-        
-        # Рисуем текст по дуге
+        # Рисуем текст с якорем в центре (mm = middle-middle)
         stroke_width = int(TEXT_STROKE_WIDTH * scale_factor)
-        draw_text_on_arc(
-            img, draw, badge_text, font,
-            arc_center_x, arc_center_y, arc_radius,
-            start_angle, end_angle,
+        draw.text(
+            (text_x, text_y),
+            badge_text,
+            font=font,
             fill=TEXT_COLOR,
+            stroke_width=stroke_width,
             stroke_fill=TEXT_STROKE_COLOR,
-            stroke_width=stroke_width
+            anchor="mm"  # Центрируем текст по середине
         )
         
         # Сохраняем в BytesIO
@@ -812,11 +804,32 @@ async def handle_quick_generate(update: Update, context: ContextTypes.DEFAULT_TY
         
         display_text = message_text if message_text == scene_description_en else f"{message_text} ({scene_description_en})"
         
-        await update.message.reply_text(
-            f"✅ Сюжет: *{display_text}*\n\n"
-            f"Какой текст написать на баннере?",
-            parse_mode='Markdown'
-        )
+        # Загружаем референсные изображения если используются предустановленные
+        if USE_PREDEFINED_REFERENCE_IMAGES:
+            reference_images = load_reference_images_from_dir(REFERENCE_IMAGES_DIR)
+            context.user_data['reference_images'] = reference_images
+            
+            if reference_images:
+                await update.message.reply_text(
+                    f"✅ Сюжет: *{display_text}*\n\n"
+                    f"📸 Использую предустановленные референсные фото ({len(reference_images)} шт.)\n\n"
+                    f"Какой текст написать на баннере?",
+                    parse_mode='Markdown'
+                )
+            else:
+                await update.message.reply_text(
+                    f"✅ Сюжет: *{display_text}*\n\n"
+                    f"⚠️ Референсные фото не найдены\n\n"
+                    f"Какой текст написать на баннере?",
+                    parse_mode='Markdown'
+                )
+        else:
+            await update.message.reply_text(
+                f"✅ Сюжет: *{display_text}*\n\n"
+                f"Какой текст написать на баннере?",
+                parse_mode='Markdown'
+            )
+        
         return WAITING_FOR_BADGE_TEXT
     
     # Генерация
