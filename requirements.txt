@@ -1,0 +1,5 @@
+python-telegram-bot==20.7
+replicate==0.25.1
+Pillow==10.2.0
+requests==2.31.0
+deep-translator==1.11.4
