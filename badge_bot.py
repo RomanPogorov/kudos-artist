@@ -47,7 +47,10 @@ REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN", "YOUR_REPLICATE_TOKEN")
 GENERATION_MODEL = "google/nano-banana"
 GENERATION_SEED = 4034097716  # None = случайный, число = фиксированный seed
 BACKGROUND_REMOVAL_MODEL = "851-labs/background-remover:a029dff38972b5fda4ec5d75d7d1cd25aeff621d2cf4946a41055d7db66b80bc"
-BACKGROUND_REMOVAL_ENABLED = False  # Деактивировано
+BACKGROUND_REMOVAL_ENABLED = False  # Активировано
+
+# Режим генерации текста
+GENERATE_TEXT_IN_PROMPT = True  # True = текст генерируется в промпте, False = добавляется программно
 
 # Референсные изображения
 REFERENCE_IMAGES_DIR = "reference_images"
@@ -63,7 +66,7 @@ TEXT_BEND_SHORT = 20  # Изгиб для текста <= 12 символов
 TEXT_BEND_LONG = 28   # Изгиб для текста > 12 символов
 TEXT_VERTICAL_OFFSET = 6  # Смещение текста вверх (пиксели)
 TEXT_LETTER_SPACING = 0.02  # Разрядка между буквами
-TEXT_MAX_LENGTH = 12  # Максимальная длина текста на баннере
+TEXT_MAX_LENGTH = 20  # Максимальная длина текста на баннере
 
 # Настройки поиска баннера
 BANNER_SEARCH_AREA_START = 0.6  # Начинаем поиск с 60% высоты изображения
@@ -93,12 +96,12 @@ MESSAGES = {
 
     "help": """📖 **Справка по использованию**
 
-**Шаг 1:** Опиши коротко что должно быть с самураем
+Опиши коротко что должно быть с самураем
 • Например: "с гитарой, с клавиатурой, в боевой стойке с мечом, с молотком, в овечьей шкуре"
 • Можно на русском или английском
 • Опиши что должно быть на картинке
 
-**Шаг 2:** Укажите текст для баннера
+Укажи текст для баннера
 • До {max_length} символов для лучшего вида
 • Английские заглавные буквы смотрятся лучше
 • Примеры: "UX SCOUT", "DEBUG NINJA"
@@ -132,7 +135,7 @@ MESSAGES = {
 
     "create_start": """🎨 Создаём новый бейдж!
 
-{step_text} Опиши коротко что должно быть с самураем
+Опиши коротко что должно быть с самураем
 Например: "с гитарой, с клавиатурой, в боевой стойке с мечом, с молотком, в овечьей шкуре"
 
 Или /cancel для отмены""",
@@ -141,7 +144,7 @@ MESSAGES = {
 
 📸 Использую предустановленные референсные фото ({count} шт.)
 
-**Шаг 2/2:** Какой текст написать на баннере?
+Какой текст написать на баннере?
 Например: DEBUG NINJA, CODE MASTER, UX SCOUT...
 
 (До {max_length} символов)""",
@@ -150,21 +153,21 @@ MESSAGES = {
 
 ⚠️ Референсные фото не найдены в папке {ref_dir}
 
-**Шаг 2/2:** Какой текст написать на баннере?
+Какой текст написать на баннере?
 Например: DEBUG NINJA, CODE MASTER, UX SCOUT...
 
 (До {max_length} символов)""",
 
     "scene_received_old_mode": """✅ Отлично! Сюжет: *{scene}*
 
-**Шаг 2/3:** Хочешь добавить референсные фото? (опционально)
+Хочешь добавить референсные фото? (опционально)
 Отправь фото или напиши /skip чтобы пропустить
 
 Можно отправить до 4 фото""",
 
     "photo_uploaded_max": """✅ Загружено {count} фото (максимум)
 
-**Шаг 3/3:** Какой текст написать на баннере?
+Какой текст написать на баннере?
 Например: DEBUG NINJA, CODE MASTER, UX SCOUT...
 
 (До {max_length} символов)""",
@@ -177,7 +180,7 @@ MESSAGES = {
 
     "skip_photos": """⏭ Пропускаем референсные фото
 
-**Шаг 3/3:** Какой текст написать на баннере?
+Какой текст написать на баннере?
 Например: DEBUG NINJA, CODE MASTER, UX SCOUT...
 
 (До {max_length} символов)""",
@@ -186,9 +189,6 @@ MESSAGES = {
 Попробуй покороче:""",
 
     "generating": "⏳ Создаю твой бейдж...\nЭто займёт 10-30 секунд ⚡",
-    "generating_step1": "⏳ Генерирую изображение... (1/2)",
-    "generating_step2": "⏳ Добавляю текст на баннер... (2/2)",
-    "generating_step3": "⏳ Удаляю фон... (3/3)",
     "generating_quick": "⏳ Создаю бейдж...",
 
     "badge_ready": """🎊 Твой бейдж готов!
@@ -312,7 +312,7 @@ def translate_to_english(text: str, user_id: int) -> str:
         return text
 
 
-def generate_image_with_lora(scene_description: str, user_id: int, reference_images: list = None) -> str:
+def generate_image_with_lora(scene_description: str, user_id: int, reference_images: list = None, badge_text: str = None) -> str:
     """Генерирует изображение через модель google/nano-banana"""
     if not os.getenv("REPLICATE_API_TOKEN"):
         os.environ["REPLICATE_API_TOKEN"] = REPLICATE_API_TOKEN
@@ -320,9 +320,31 @@ def generate_image_with_lora(scene_description: str, user_id: int, reference_ima
     try:
         logger.info(f"User {user_id}: Generating image with scene '{scene_description}'")
         
+        # Формируем базовый промпт
+        prompt_parts = [
+            "single character portrait",
+            scene_description,
+            "plain grey background",
+            "isolated character",
+            "centered",
+            "no other people",
+            "solo character",
+            "simple clean background"
+        ]
+        
+        # Если включена генерация текста в промпте и текст передан
+        if GENERATE_TEXT_IN_PROMPT and badge_text:
+            badge_text_upper = badge_text.upper()
+            prompt_parts.append(f"yellow banner at the bottom with text '{badge_text_upper}' written on it")
+            logger.info(f"User {user_id}: Including badge text '{badge_text_upper}' in prompt")
+        else:
+            prompt_parts.append("yellow banner at the bottom for text")
+        
+        prompt = ", ".join(prompt_parts)
+        
         nano_banana_input = {
-            "prompt": f"single character portrait, {scene_description}, plain white background, isolated character, centered, no other people, solo character, simple clean background, yellow banner at the bottom for text",
-            "negative_prompt": "multiple people, crowd, background scenery, landscape, buildings, complex background, group photo, many characters, detailed background, other people, extras",
+            "prompt": prompt,
+            "negative_prompt": "multiple people, crowd, background scenery, landscape, buildings, complex background, group photo, many characters, detailed background, other people, extras, text errors, misspelled words, wrong text",
             "output_format": "jpg",
         }
         
@@ -555,8 +577,7 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def create_badge(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Начало создания бейджа"""
-    step_text = "**Шаг 1/2:**" if USE_PREDEFINED_REFERENCE_IMAGES else "**Шаг 1/3:**"
-    await update.message.reply_text(MESSAGES["create_start"].format(step_text=step_text))
+    await update.message.reply_text(MESSAGES["create_start"])
     return WAITING_FOR_SCENE
 
 
@@ -659,14 +680,25 @@ async def handle_badge_text_input(update: Update, context: ContextTypes.DEFAULT_
     status_message = await update.message.reply_text(MESSAGES["generating"])
     
     try:
-        await status_message.edit_text(MESSAGES["generating_step1"])
-        image_url = generate_image_with_lora(scene_description, user_id, reference_images)
+        # Передаём текст в генерацию, если включен режим генерации текста в промпте
+        image_url = generate_image_with_lora(
+            scene_description, 
+            user_id, 
+            reference_images,
+            badge_text=badge_text if GENERATE_TEXT_IN_PROMPT else None
+        )
         
-        await status_message.edit_text(MESSAGES["generating_step2"])
-        image_with_text = add_text_to_badge(image_url, badge_text, user_id)
+        # Если текст генерируется в промпте, пропускаем этап добавления текста
+        if GENERATE_TEXT_IN_PROMPT:
+            # Загружаем изображение напрямую
+            response = requests.get(image_url)
+            response.raise_for_status()
+            image_with_text = BytesIO(response.content)
+            image_with_text.seek(0)
+        else:
+            image_with_text = add_text_to_badge(image_url, badge_text, user_id)
         
         if BACKGROUND_REMOVAL_ENABLED:
-            await status_message.edit_text(MESSAGES["generating_step3"])
             image_with_text = remove_background(image_with_text, user_id)
         
         await status_message.delete()
@@ -751,8 +783,23 @@ async def handle_quick_generate(update: Update, context: ContextTypes.DEFAULT_TY
         reference_images = load_reference_images_from_dir(REFERENCE_IMAGES_DIR)
     
     try:
-        image_url = generate_image_with_lora(scene_description_en, user_id, reference_images)
-        image_with_text = add_text_to_badge(image_url, badge_text, user_id)
+        # Передаём текст в генерацию, если включен режим генерации текста в промпте
+        image_url = generate_image_with_lora(
+            scene_description_en, 
+            user_id, 
+            reference_images,
+            badge_text=badge_text if GENERATE_TEXT_IN_PROMPT else None
+        )
+        
+        # Если текст генерируется в промпте, пропускаем этап добавления текста
+        if GENERATE_TEXT_IN_PROMPT:
+            # Загружаем изображение напрямую
+            response = requests.get(image_url)
+            response.raise_for_status()
+            image_with_text = BytesIO(response.content)
+            image_with_text.seek(0)
+        else:
+            image_with_text = add_text_to_badge(image_url, badge_text, user_id)
         
         if BACKGROUND_REMOVAL_ENABLED:
             image_with_text = remove_background(image_with_text, user_id)
