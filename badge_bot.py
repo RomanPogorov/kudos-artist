@@ -377,6 +377,111 @@ def draw_text_on_arc(img, draw, text: str, font, center_x: int, center_y: int, r
         img.paste(rotated_char, (paste_x, paste_y), rotated_char)
 
 
+def remove_background(image_bytes: BytesIO, user_id: int) -> BytesIO:
+    """
+    Удаляет фон с изображения через Replicate API
+    Использует модель 851-labs/background-remover
+    
+    Args:
+        image_bytes: BytesIO объект с изображением
+        user_id: ID пользователя для логирования
+        
+    Returns:
+        BytesIO объект с изображением без фона (PNG с прозрачностью)
+    """
+    try:
+        logger.info(f"User {user_id}: Removing background from image")
+        
+        # Убеждаемся, что токен установлен
+        if not os.getenv("REPLICATE_API_TOKEN"):
+            os.environ["REPLICATE_API_TOKEN"] = REPLICATE_API_TOKEN
+        
+        # Загружаем изображение в PIL для предобработки
+        image_bytes.seek(0)
+        img = Image.open(image_bytes)
+        
+        # Конвертируем в RGB если нужно (для лучшей совместимости)
+        if img.mode == 'RGBA':
+            # Если уже RGBA, создаём белый фон для лучшего удаления
+            background = Image.new('RGB', img.size, (255, 255, 255))
+            background.paste(img, mask=img.split()[3])  # Используем альфа-канал как маску
+            img = background
+        elif img.mode != 'RGB':
+            img = img.convert('RGB')
+        
+        # Сохраняем во временный файл для загрузки
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as temp_file:
+            img.save(temp_file, format='PNG', quality=95)
+            temp_file_path = temp_file.name
+        
+        try:
+            # Загружаем файл для передачи в Replicate
+            with open(temp_file_path, 'rb') as img_file:
+                # Используем модель 851-labs/background-remover с правильным хешем и параметрами
+                output = replicate.run(
+                    "851-labs/background-remover:a029dff38972b5fda4ec5d75d7d1cd25aeff621d2cf4946a41055d7db66b80bc",
+                    input={
+                        "image": img_file,
+                        "format": "png",
+                        "reverse": False,
+                        "threshold": 0,
+                        "background_type": "rgba"
+                    }
+                )
+                logger.info(f"User {user_id}: Using 851-labs/background-remover model")
+            
+            # Получаем результат
+            if hasattr(output, 'read'):
+                # Если это FileOutput объект с методом read()
+                result_bytes = BytesIO(output.read())
+                result_bytes.seek(0)
+                logger.info(f"User {user_id}: Background removed successfully")
+                return result_bytes
+            elif hasattr(output, 'url'):
+                # Если это FileOutput объект с методом url()
+                image_url = output.url()
+                response = requests.get(image_url)
+                response.raise_for_status()
+                result_bytes = BytesIO(response.content)
+                result_bytes.seek(0)
+                logger.info(f"User {user_id}: Background removed successfully (from URL)")
+                return result_bytes
+            elif isinstance(output, (list, tuple)) and len(output) > 0:
+                # Если это список с URL
+                image_url = output[0]
+                response = requests.get(image_url)
+                response.raise_for_status()
+                result_bytes = BytesIO(response.content)
+                result_bytes.seek(0)
+                logger.info(f"User {user_id}: Background removed successfully (from list URL)")
+                return result_bytes
+            else:
+                # Fallback - пробуем как строку URL
+                image_url = str(output)
+                if image_url.startswith('http'):
+                    response = requests.get(image_url)
+                    response.raise_for_status()
+                    result_bytes = BytesIO(response.content)
+                    result_bytes.seek(0)
+                    logger.info(f"User {user_id}: Background removed successfully (from string URL)")
+                    return result_bytes
+                else:
+                    raise ValueError(f"Unexpected output format from remove-bg model: {type(output)}")
+                    
+        finally:
+            # Удаляем временный файл
+            try:
+                os.unlink(temp_file_path)
+            except Exception as e:
+                logger.warning(f"User {user_id}: Failed to delete temp file: {e}")
+                
+    except Exception as e:
+        logger.error(f"User {user_id}: Error removing background: {e}")
+        # В случае ошибки возвращаем оригинальное изображение
+        image_bytes.seek(0)
+        return image_bytes
+
+
 def add_text_to_badge(image_url: str, badge_text: str, user_id: int) -> BytesIO:
     """
     Добавляет текст на баннер бейджа
@@ -773,7 +878,13 @@ async def handle_badge_text_input(update: Update, context: ContextTypes.DEFAULT_
         await status_message.edit_text(
             "⏳ Добавляю текст на баннер... (2/2)"
         )
-        final_image = add_text_to_badge(image_url, badge_text, user_id)
+        image_with_text = add_text_to_badge(image_url, badge_text, user_id)
+        
+        # Шаг 3: Удаление фона (деактивировано)
+        # await status_message.edit_text(
+        #     "⏳ Удаляю фон... (3/3)"
+        # )
+        # final_image = remove_background(image_with_text, user_id)
         
         # Отправляем готовый бейдж
         await status_message.delete()
@@ -787,7 +898,7 @@ async def handle_badge_text_input(update: Update, context: ContextTypes.DEFAULT_
                   f"Хочешь ещё? Просто напиши /create"
         
         await update.message.reply_photo(
-            photo=final_image,
+            photo=image_with_text,
             caption=caption
         )
         
@@ -899,12 +1010,14 @@ async def handle_quick_generate(update: Update, context: ContextTypes.DEFAULT_TY
     
     try:
         image_url = generate_image_with_lora(scene_description_en, user_id, reference_images)
-        final_image = add_text_to_badge(image_url, badge_text, user_id)
+        image_with_text = add_text_to_badge(image_url, badge_text, user_id)
+        # Шаг удаления фона деактивирован
+        # final_image = remove_background(image_with_text, user_id)
         
         await status_message.delete()
         original_scene = context.user_data.get('scene_original', scene_description_en)
         await update.message.reply_photo(
-            photo=final_image,
+            photo=image_with_text,
             caption=f"🎊 Готово!\n{original_scene} | {badge_text}"
         )
         
