@@ -45,7 +45,7 @@ REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN", "YOUR_REPLICATE_TOKEN")
 
 # Модели Replicate
 GENERATION_MODEL = "google/nano-banana"
-GENERATION_SEED = 4034097716  # None = случайный, число = фиксированный seed
+GENERATION_SEED = None  # None = случайный, число = фиксированный seed
 BACKGROUND_REMOVAL_MODEL = "851-labs/background-remover:a029dff38972b5fda4ec5d75d7d1cd25aeff621d2cf4946a41055d7db66b80bc"
 BACKGROUND_REMOVAL_ENABLED = False  # Активировано
 
@@ -55,6 +55,14 @@ GENERATE_TEXT_IN_PROMPT = True  # True = текст генерируется в 
 # Референсные изображения
 REFERENCE_IMAGES_DIR = "reference_images"
 USE_PREDEFINED_REFERENCE_IMAGES = True
+FEMALE_REFERENCE_IMAGE = "Girl.jpg"  # Референс для женских персонажей
+
+# Ключевые слова для определения женского персонажа
+FEMALE_KEYWORDS = [
+    'girl', 'woman', 'female', 'lady', 'she', 'her', 'wife', 'mother', 'mom', 'daughter',
+    'девушка', 'женщина', 'девочка', 'дама', 'жена', 'мать', 'мама', 'дочь', 'дочка',
+    'сестра', 'sister', 'бабушка', 'grandmother', 'тётя', 'aunt'
+]
 
 # Настройки текста на бейдже
 FONT_PATH = "fonts/Golos-Text_Bold.ttf"
@@ -262,8 +270,55 @@ def find_yellow_banner_center(img: Image.Image, user_id: int) -> tuple:
         return (img.width // 2, int(img.height * BANNER_DEFAULT_Y_POSITION))
 
 
+def is_female_prompt(text: str) -> bool:
+    """Проверяет, содержит ли текст упоминание женского персонажа"""
+    text_lower = text.lower()
+    return any(keyword in text_lower for keyword in FEMALE_KEYWORDS)
+
+
+# Ключевые слова для определения активной/динамичной сцены
+ACTION_KEYWORDS = [
+    'fight', 'fighting', 'battle', 'attack', 'sword', 'katana', 'strike', 'slash', 'jump', 'run',
+    'бой', 'битва', 'атака', 'меч', 'катана', 'удар', 'прыжок', 'бежать', 'сражение', 'рубит',
+    'combat', 'warrior', 'action', 'dynamic', 'stance', 'боевой', 'стойка', 'воин'
+]
+
+
+def is_action_scene(text: str) -> bool:
+    """Проверяет, является ли сцена активной/динамичной"""
+    text_lower = text.lower()
+    return any(keyword in text_lower for keyword in ACTION_KEYWORDS)
+
+
+def load_single_reference_image(filename: str) -> list:
+    """Загружает один конкретный референсный файл"""
+    filepath = os.path.join(REFERENCE_IMAGES_DIR, filename)
+    if not os.path.exists(filepath):
+        logger.warning(f"Reference image {filepath} does not exist")
+        return []
+    
+    try:
+        with open(filepath, 'rb') as f:
+            img_bytes = BytesIO(f.read())
+            img_bytes.seek(0)
+            logger.info(f"Loaded single reference image: {filename}")
+            return [img_bytes]
+    except Exception as e:
+        logger.warning(f"Failed to load {filename}: {e}")
+        return []
+
+
+def load_reference_images_for_prompt(prompt: str) -> list:
+    """Загружает референсы в зависимости от содержимого промпта"""
+    if is_female_prompt(prompt):
+        logger.info(f"Detected female character in prompt, using {FEMALE_REFERENCE_IMAGE}")
+        return load_single_reference_image(FEMALE_REFERENCE_IMAGE)
+    else:
+        return load_reference_images_from_dir(REFERENCE_IMAGES_DIR)
+
+
 def load_reference_images_from_dir(directory: str) -> list:
-    """Загружает референсные фото из указанной папки"""
+    """Загружает референсные фото из указанной папки, исключая специальные референсы"""
     reference_images = []
     
     if not os.path.exists(directory):
@@ -271,11 +326,13 @@ def load_reference_images_from_dir(directory: str) -> list:
         return reference_images
     
     supported_formats = ('.jpg', '.jpeg', '.png', '.webp', '.gif')
+    excluded_files = [FEMALE_REFERENCE_IMAGE.lower()]
     
     try:
         files = [f for f in os.listdir(directory) 
                 if os.path.isfile(os.path.join(directory, f)) 
-                and f.lower().endswith(supported_formats)]
+                and f.lower().endswith(supported_formats)
+                and f.lower() not in excluded_files]
         files.sort()
         
         for filename in files:
@@ -320,31 +377,51 @@ def generate_image_with_lora(scene_description: str, user_id: int, reference_ima
     try:
         logger.info(f"User {user_id}: Generating image with scene '{scene_description}'")
         
+        # Определяем тип сцены
+        is_action = is_action_scene(scene_description)
+        pose_prompt = "standing dynamic pose, waist-up shot" if is_action else "sitting in lotus pose, calm meditative"
+        logger.info(f"User {user_id}: Scene type: {'action' if is_action else 'calm'}")
+        
+        # Определяем пол персонажа
+        is_female = is_female_prompt(scene_description)
+        gender_prompt = "female samurai woman" if is_female else "male samurai man"
+        
         # Формируем базовый промпт
         prompt_parts = [
-            "single character portrait",
+            f"single {gender_prompt}",
+            pose_prompt,
+            "upper body only",
             scene_description,
-            "plain grey background",
+            "anatomically correct two hands only",
+            "if holding sword then single katana held with both hands",
+            "large red circle behind the character with white diagonal scratch marks across it",
+            "red sun with white claw scratches",
+            "plain light grey background",
             "isolated character",
-            "centered",
-            "no other people",
+            "centered composition",
             "solo character",
-            "simple clean background"
+            "Japanese samurai style",
+            "clean minimal background",
+            "vector art style",
+            "flat illustration"
         ]
         
         # Если включена генерация текста в промпте и текст передан
         if GENERATE_TEXT_IN_PROMPT and badge_text:
             badge_text_upper = badge_text.upper()
-            prompt_parts.append(f"yellow banner at the bottom with text '{badge_text_upper}' written on it")
+            prompt_parts.append(f"bold black text '{badge_text_upper}' at the bottom, no background behind text")
             logger.info(f"User {user_id}: Including badge text '{badge_text_upper}' in prompt")
         else:
-            prompt_parts.append("yellow banner at the bottom for text")
+            prompt_parts.append("space for text at the bottom")
         
         prompt = ", ".join(prompt_parts)
         
+        # Негативный промпт с учётом пола
+        negative_gender = "male, man, masculine" if is_female else "female, woman, feminine, girl"
+        
         nano_banana_input = {
             "prompt": prompt,
-            "negative_prompt": "multiple people, crowd, background scenery, landscape, buildings, complex background, group photo, many characters, detailed background, other people, extras, text errors, misspelled words, wrong text",
+            "negative_prompt": f"{negative_gender}, multiple people, crowd, full body, legs visible, standing full figure, background scenery, landscape, buildings, complex background, group photo, many characters, detailed background, other people, extras, text errors, misspelled words, wrong text, realistic photo, 3d render, yellow banner, text banner, text background, ribbon, badge, label behind text, colored background behind text, extra hands, extra arms, three hands, four hands, multiple hands, deformed hands, mutated hands, extra fingers, missing fingers, fused fingers, bad anatomy, multiple swords, two swords, dual wield, extra weapons, sword on back",
             "output_format": "jpg",
         }
         
@@ -593,7 +670,7 @@ async def handle_scene_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
     display_text = scene_description if scene_description == scene_description_en else f"{scene_description} ({scene_description_en})"
     
     if USE_PREDEFINED_REFERENCE_IMAGES:
-        reference_images = load_reference_images_from_dir(REFERENCE_IMAGES_DIR)
+        reference_images = load_reference_images_for_prompt(scene_description_en)
         context.user_data['reference_images'] = reference_images
         
         if reference_images:
@@ -750,7 +827,7 @@ async def handle_quick_generate(update: Update, context: ContextTypes.DEFAULT_TY
         display_text = message_text if message_text == scene_description_en else f"{message_text} ({scene_description_en})"
         
         if USE_PREDEFINED_REFERENCE_IMAGES:
-            reference_images = load_reference_images_from_dir(REFERENCE_IMAGES_DIR)
+            reference_images = load_reference_images_for_prompt(scene_description_en)
             context.user_data['reference_images'] = reference_images
             
             if reference_images:
@@ -780,7 +857,7 @@ async def handle_quick_generate(update: Update, context: ContextTypes.DEFAULT_TY
     
     reference_images = []
     if USE_PREDEFINED_REFERENCE_IMAGES:
-        reference_images = load_reference_images_from_dir(REFERENCE_IMAGES_DIR)
+        reference_images = load_reference_images_for_prompt(scene_description_en)
     
     try:
         # Передаём текст в генерацию, если включен режим генерации текста в промпте
