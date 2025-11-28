@@ -377,32 +377,10 @@ def generate_image_with_lora(scene_description: str, user_id: int, reference_ima
     try:
         logger.info(f"User {user_id}: Generating image with scene '{scene_description}'")
         
-        # Определяем тип сцены
-        is_action = is_action_scene(scene_description)
-        pose_prompt = "standing dynamic pose, waist-up shot" if is_action else "sitting in lotus pose, calm meditative"
-        logger.info(f"User {user_id}: Scene type: {'action' if is_action else 'calm'}")
-        
-        # Определяем пол персонажа
-        is_female = is_female_prompt(scene_description)
-        gender_prompt = "female samurai woman" if is_female else "male samurai man"
-        
-        # Формируем базовый промпт
+        # Формируем упрощённый промпт: пользовательский промпт + красный шар с царапинами
         prompt_parts = [
-            f"single {gender_prompt}",
-            pose_prompt,
-            "upper body only",
             scene_description,
-            "if holding sword then single katana held with both hands",
-            "large red circle behind the character with white diagonal scratch marks across it",
-            "red sun with white claw scratches",
-            "plain white background",
-            "isolated character",
-            "centered composition",
-            "solo character",
-            "Japanese samurai style",
-            "clean minimal background",
-            "vector art style",
-            "flat illustration"
+            "large red circle behind the character with white diagonal scratch marks across it"
         ]
         
         # Если включена генерация текста в промпте и текст передан
@@ -415,12 +393,10 @@ def generate_image_with_lora(scene_description: str, user_id: int, reference_ima
         
         prompt = ", ".join(prompt_parts)
         
-        # Негативный промпт с учётом пола
-        negative_gender = "male, man, masculine" if is_female else "female, woman, feminine, girl"
-        
+        # Упрощённый негативный промпт
         nano_banana_input = {
             "prompt": prompt,
-            "negative_prompt": f"{negative_gender}, multiple people, crowd, full body, legs visible, standing full figure, background scenery, landscape, buildings, complex background, group photo, many characters, detailed background, other people, extras, text errors, misspelled words, wrong text, realistic photo, 3d render, yellow banner, text banner, text background, ribbon, badge, label behind text, colored background behind text, extra hands, extra arms, three hands, four hands, multiple hands, deformed hands, mutated hands, extra fingers, missing fingers, fused fingers, bad anatomy, multiple swords, two swords, dual wield, extra weapons, sword on back",
+            "negative_prompt": "multiple people, crowd, text errors, misspelled words, wrong text",
             "output_format": "jpg",
         }
         
